@@ -6,6 +6,6 @@ doit:
 test:
 	sbt test
 
-clean:
-	git clean -fd
+# clean:
+#	git clean -fd
 
