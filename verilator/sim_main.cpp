@@ -124,88 +124,87 @@ int main(int argc, char** argv) {
     top = new Vtop{contextp.get(), "TOP"};
 
     // Generate random data
-    const int NUM_INOUTS = 256;
-    const int NUM_SEGS = 2;
-    uint16_t idx[NUM_INOUTS], val[NUM_INOUTS], gt[NUM_INOUTS], out[NUM_INOUTS];
-    uint64_t packed_idx_u64[NUM_INOUTS / 4], packed_val_u64[NUM_INOUTS / 4];
+    const int NUM_INOUTS_16b = 256;
+    const int NUM_INOUTS_64b = NUM_INOUTS_16b/4;
+    const int NUM_SEGS = 8;
+    uint16_t idx[NUM_INOUTS_16b], val[NUM_INOUTS_16b], gt[NUM_INOUTS_16b], out[NUM_INOUTS_16b];
+    uint64_t packed_idx_u64[NUM_INOUTS_64b], packed_val_u64[NUM_INOUTS_64b];
 
-    generate_random_uint16(idx, 32, NUM_INOUTS);
-    generate_random_uint16(val, 100, NUM_INOUTS);
+    // generate_random_uint16(idx, 32, NUM_INOUTS_16b);
+    // generate_random_uint16(val, 100, NUM_INOUTS_16b);
 
-    // generate_seq_uint16(idx, 32, NUM_INOUTS, true);
-    // generate_seq_uint16(val, NUM_INOUTS, NUM_INOUTS, false);
+    generate_seq_uint16(idx, 32, NUM_INOUTS_16b, true);
+    generate_seq_uint16(val, NUM_INOUTS_16b, NUM_INOUTS_16b, false);
 
-    bit_pack_uint16_to_uint64(idx, packed_idx_u64, NUM_INOUTS/4);
+    bit_pack_uint16_to_uint64(idx, packed_idx_u64, NUM_INOUTS_64b);
     printf("val:\t");
-    print_uint16(val, NUM_INOUTS);
+    print_uint16(val, NUM_INOUTS_16b);
 
-    bit_pack_uint16_to_uint64(val, packed_val_u64, NUM_INOUTS/4);
+    bit_pack_uint16_to_uint64(val, packed_val_u64, NUM_INOUTS_64b);
     printf("idx:\t");
-    print_uint16(idx, NUM_INOUTS);
+    print_uint16(idx, NUM_INOUTS_16b);
 
     // Preprocess the index data to avoid out-of-bound access
-    for(int i = 0; i < NUM_INOUTS; i++) {
+    for(int i = 0; i < NUM_INOUTS_16b; i++) {
         gt[i] = val[idx[i] + (32*(i/32))];
     }
 
     printf("gt:\t");
-    print_uint16(gt, NUM_INOUTS);
+    print_uint16(gt, NUM_INOUTS_16b);
 
     // Set Vtop's input signals
-    top->reset = 0;
+    top->reset = 1;
     top->clock = 1;
-    top->io_sel_out = 0;
+    tick();
+
+    top->reset = 0;
+    top->io_inValid = 0;
+    top->io_selIdxVal = 0;
+    top->io_permute = 0;
 
     // Simulate until $finish
-    int cycles = 1;
     int cnt = 0;
-    // while (!contextp->gotFinish()) {
-    while (cycles-->0) {
+    for(int m = 0; m < 1; m++) {
         // Step 1: load index and val data
-        for(int seg = 0; seg < NUM_SEGS; seg++) {
-            top->io_addr = seg;
-            top->io_in_valid = 1;
-
-            top->io_sel_idx_val = 0;
-            for(int i = 0; i < NUM_INOUTS/4/2; i++) {
-                top->io_in_data[i] = packed_idx_u64[seg*NUM_INOUTS/4/2 + i];
-            }
-
-            tick();
-            
-            // Load val data
-            top->io_sel_idx_val = 1;
-            for(int i = 0; i < NUM_INOUTS/4/2; i++) {
-                top->io_in_data[i] = packed_val_u64[seg*NUM_INOUTS/4/2 + i];
-            }
-
-            tick();
+        top->io_inValid = 1;
+        top->io_selIdxVal = 0;
+        for(int i = 0; i < NUM_INOUTS_64b; i++) {
+            top->io_inData[i] = packed_idx_u64[i];
         }
+
+        tick();
+            
+        // Load val data
+        top->io_selIdxVal = 1;
+        for(int i = 0; i < NUM_INOUTS_64b; i++) {
+            top->io_inData[i] = packed_val_u64[i];
+        }
+
+        tick();
 
         // Step 2: read out permuted data
-        for(int seg = 0; seg < NUM_SEGS; seg++) {
-            top->io_in_valid = 0;
-            top->io_out_valid = 1;
-            top->io_sel_out = 1;
-            top->io_addr = seg;
-            top->io_rotate = 0;
+        top->io_inValid = 0;
+        top->io_permute = 1;
+        top->io_mode = 0;
+        top->io_outReady = 1;
 
+        while(!top->io_outValid) {
             tick();
-
-            bit_unpack_uint64_to_uint16(top->io_out_data, out+seg*NUM_INOUTS/2, NUM_INOUTS/4/2);
-
+            top->io_permute = 0; // remove to set to low
         }
+        bit_unpack_uint64_to_uint16(top->io_outData, out, NUM_INOUTS_64b);
+
+        tick();
+        tick();
 
         printf("out:\t");
-        print_uint16(out, NUM_INOUTS);
-        if(!check_gather_result(gt, out, NUM_INOUTS)) {
+        print_uint16(out, NUM_INOUTS_16b);
+        if(!check_gather_result(gt, out, NUM_INOUTS_16b)) {
             printf("Error: gather result mismatch\n");
             return -1;
         } else{
             printf("\nPass!\n");
         }
-
-        // print_uint64(top->io_out_data, NUM_INOUTS/4/2);
 
 
         // Read outputs
@@ -240,8 +239,8 @@ int main(int argc, char** argv) {
 #endif
 
     delete top;
-    // delete contextp;
     // Return good completion status
     // Don't use exit() or destructor won't get called
+
     return 0;
 }

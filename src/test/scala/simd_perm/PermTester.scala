@@ -25,56 +25,66 @@ class TestPermutationNetwork extends AnyFlatSpec with ChiselScalatestTester {
 
   val t_ = new PermTester()
 
-  "vector_reg" should "work" in {
+  "VectorReg" should "work" in {
     val XLEN = 64
     val NumBanks = 8
-    val NumLanes = 4
-    val NumSegments = 2
+    val NumLanes = 8
+    val NumSegments = 8
+    val EnableRotation = true
+    val NumRotationRadix = 4
 
-    test(new vector_reg(XLEN, NumLanes, NumBanks, NumSegments)) { dut =>
+    test(new VectorReg(XLEN, NumLanes, NumBanks, NumSegments, EnableRotation, NumRotationRadix)) { dut =>
       for(i <- 0 until 1) {
         val in_data_seq = t_.gen_random_seq(123, NumLanes*NumBanks, 16)
         val in_addr_seq = t_.gen_random_seq(NumSegments, NumSegments, log2Ceil(NumSegments))
 
-        dut.io.valid.poke(true.B)
-        dut.io.in_addr.poke(in_addr_seq(1))
+        dut.io.inValid.poke(true.B)
         for(lane <- 0 until NumLanes) {
           for(bank <- 0 until NumBanks) {
-            dut.io.in_data(lane)(bank).poke(in_data_seq(lane*NumBanks + bank))
+            dut.io.inData(lane)(bank).poke(in_data_seq(lane*NumBanks + bank))
           }
         }
 
         dut.clock.step(1)
 
-        dut.io.valid.poke(false.B)
+        println(s"in_data_seq:\n${in_data_seq}")
+        println(s"out:\n${dut.io.outData.peek()}")
 
-        println(s"in_data_seq: ${in_data_seq}")
-        println(s"out: ${dut.io.out_data.peek()}")
-
-        dut.clock.step(1)
-
-        dut.io.valid.poke(true.B)
+        dut.io.inValid.poke(false.B)
         dut.io.rotate.poke(true.B)
+        dut.io.rotateLevel.poke(0.U)
 
         dut.clock.step(1)
 
-        println(s"rotated out: ${dut.io.out_data.peek()}")
+        val rout_0 = dut.io.outData.peek()
+        println(s"rotated out-0:\n${rout_0}")
 
-        dut.io.valid.poke(true.B)
+        dut.clock.step(1)
+
+        val rout_0_original = dut.io.outData.peek()
+        println(s"original out:\n${rout_0_original}")
+
         dut.io.rotate.poke(true.B)
+        dut.io.rotateLevel.poke(1.U)
 
         dut.clock.step(1)
 
-        println(s"rotated out 2: ${dut.io.out_data.peek()}")
+        val rout_1_1 = dut.io.outData.peek()
+        println(s"rotated out-1-1:\n${rout_1_1}")
+
+        dut.clock.step(1)
+
+        val rout_1_2 = dut.io.outData.peek()
+        println(s"rotated out-1-2:\n${rout_1_2}")
       }
     }
   }
 
 
-  "crossbar_2d" should "work" in {
+  "Crossbar2D" should "work" in {
     val num_nodes = 8
     val data_width = 16
-    test(new crossbar_2d(num_nodes, data_width)) { dut =>
+    test(new Crossbar2D(num_nodes, data_width)) { dut =>
       
       for(i <- 0 until 5) {
         // Generate random permutation indices (0 to num_nodes-1)
@@ -86,8 +96,8 @@ class TestPermutationNetwork extends AnyFlatSpec with ChiselScalatestTester {
 
         // Apply inputs to DUT
         for (row <- 0 until num_nodes) {
-          dut.io.in_val(row).poke(in_val_seq(row))
-          dut.io.in_idx(row).poke(in_idx_seq(row))
+          dut.io.inVal(row).poke(in_val_seq(row))
+          dut.io.inIdx(row).poke(in_idx_seq(row))
         }
       
         dut.clock.step(1)
@@ -95,7 +105,7 @@ class TestPermutationNetwork extends AnyFlatSpec with ChiselScalatestTester {
         // Verify outputs based on permutation
         for (col <- 0 until num_nodes) {
           var expected_val = in_val_seq(in_idx_seq(col).litValue.toInt)
-          dut.io.out(col).expect(expected_val)
+          dut.io.outVal(col).expect(expected_val)
           // println(s"out @ $col: ${dut.io.out(col).peek().litValue.toInt}")
           // println(s"gt @ $col: ${in_val_seq(in_idx_seq(col).litValue.toInt).litValue.toString}")
         }
@@ -104,63 +114,5 @@ class TestPermutationNetwork extends AnyFlatSpec with ChiselScalatestTester {
   }
 
 
-  "simd_permutation_network" should "work" in {
-    val XLEN = 64
-    val NumLanes = 4
-    val NumBanks = 8
-    val NumSegments = 2
-
-    test(new simd_permutation_network(XLEN, NumLanes, NumBanks, NumSegments)).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
-      for(i <- 0 until 1) {
-        // val in_addr_seq = t_.gen_random_seq(NumSegments, NumSegments, log2Ceil(NumSegments))
-
-        // Step 1: load val and idx data
-        for(s <- 0 until NumSegments) {
-          // Load index data - generate random data for each lane
-          // val in_idx_data = t_.gen_random_seq(32, NumLanes, XLEN*NumBanks)//.grouped(NumBanks).toSeq
-          
-          dut.io.in_valid.poke(true.B)
-          dut.io.sel_idx_val.poke(0.B)
-          dut.io.addr.poke(s.U)
-          dut.io.rotate.poke(false.B)
-
-          for(l <- 0 until NumLanes) {
-            for(b <- 0 until NumBanks) {
-              dut.io.in_data(l)(b).poke(l*NumBanks + b)
-            }
-          }
-
-          dut.clock.step(1)
-
-          // Step 2: Load value data
-          // val in_val_data = t_.gen_random_seq(99, NumLanes*NumBanks, XLEN).grouped(NumBanks).toSeq
-          
-          dut.io.in_valid.poke(true.B)
-          dut.io.sel_idx_val.poke(1.B)
-          dut.io.addr.poke(s.U)
-          dut.io.rotate.poke(false.B)
-
-          for(l <- 0 until NumLanes) {
-            for(b <- 0 until NumBanks) {
-              dut.io.in_data(l)(b).poke(l*NumBanks + b)
-            }
-          }
-
-          dut.clock.step(1)
-        }
-
-        // Step 2: test output
-        for(s <- 0 until NumSegments) {
-          dut.io.out_valid.poke(true.B)
-          dut.io.sel_out.poke(true.B)
-          dut.io.addr.poke(s.U)
-
-          dut.clock.step(1)
-          println(s"Output data: ${dut.io.out_data.peek()}")
-        }
-
-      }
-    }
-  }
 }
 

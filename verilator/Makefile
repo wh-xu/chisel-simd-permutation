@@ -52,7 +52,7 @@ VERILATOR_FLAGS += --coverage
 VERILATOR_FLAGS += -O3 -Wno-fatal -Wno-PINCONNECTEMPTY -Wno-BLKANDNBLK -Wno-CASEINCOMPLETE -Wno-CMPCONST -Wno-LATCH -Wno-LITENDIAN -Wno-UNOPTFLAT -Wno-UNPACKED -Wno-UNSIGNED -Wno-WIDTH -Wno-WIDTHCONCAT -Wno-ENUMVALUE -Wno-COMBDLY
 
 # Input files for Verilator
-VERILATOR_INPUT = -f input.vc top.sv simd_permutation_network.sv sim_main.cpp
+VERILATOR_INPUT = -f input.vc top.sv SimdPermutation.sv sim_main.cpp
 
 ######################################################################
 default: run
