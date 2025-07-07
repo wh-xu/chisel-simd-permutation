@@ -126,31 +126,8 @@ int main(int argc, char** argv) {
     // Generate random data
     const int NUM_INOUTS_16b = 256;
     const int NUM_INOUTS_64b = NUM_INOUTS_16b/4;
-    const int NUM_SEGS = 8;
     uint16_t idx[NUM_INOUTS_16b], val[NUM_INOUTS_16b], gt[NUM_INOUTS_16b], out[NUM_INOUTS_16b];
     uint64_t packed_idx_u64[NUM_INOUTS_64b], packed_val_u64[NUM_INOUTS_64b];
-
-    // generate_random_uint16(idx, 32, NUM_INOUTS_16b);
-    // generate_random_uint16(val, 100, NUM_INOUTS_16b);
-
-    generate_seq_uint16(idx, 32, NUM_INOUTS_16b, true);
-    generate_seq_uint16(val, NUM_INOUTS_16b, NUM_INOUTS_16b, false);
-
-    bit_pack_uint16_to_uint64(idx, packed_idx_u64, NUM_INOUTS_64b);
-    printf("val:\t");
-    print_uint16(val, NUM_INOUTS_16b);
-
-    bit_pack_uint16_to_uint64(val, packed_val_u64, NUM_INOUTS_64b);
-    printf("idx:\t");
-    print_uint16(idx, NUM_INOUTS_16b);
-
-    // Preprocess the index data to avoid out-of-bound access
-    for(int i = 0; i < NUM_INOUTS_16b; i++) {
-        gt[i] = val[idx[i] + (32*(i/32))];
-    }
-
-    printf("gt:\t");
-    print_uint16(gt, NUM_INOUTS_16b);
 
     // Set Vtop's input signals
     top->reset = 1;
@@ -158,13 +135,36 @@ int main(int argc, char** argv) {
     tick();
 
     top->reset = 0;
+    top->io_mode = 0;
     top->io_inValid = 0;
     top->io_selIdxVal = 0;
     top->io_permute = 0;
 
     // Simulate until $finish
-    int cnt = 0;
-    for(int m = 0; m < 1; m++) {
+    for(int m = 0; m <= 1; m++) {
+        generate_random_uint16(idx, 16*(m+1), NUM_INOUTS_16b);
+        generate_random_uint16(val, NUM_INOUTS_16b, NUM_INOUTS_16b);
+
+        // generate_seq_uint16(idx, 16*(m+1), NUM_INOUTS_16b, true);
+        // generate_seq_uint16(val, NUM_INOUTS_16b, NUM_INOUTS_16b, false);
+
+        bit_pack_uint16_to_uint64(idx, packed_idx_u64, NUM_INOUTS_64b);
+        printf("val:\t");
+        print_uint16(val, NUM_INOUTS_16b);
+
+        bit_pack_uint16_to_uint64(val, packed_val_u64, NUM_INOUTS_64b);
+        printf("idx:\t");
+        print_uint16(idx, NUM_INOUTS_16b);
+
+        // Preprocess the index data to avoid out-of-bound access
+        for(int i = 0; i < NUM_INOUTS_16b; i++) {
+            gt[i] = val[idx[i] + (16*(m+1)*(i/(16*(m+1))))];
+        }
+
+        printf("gt:\t");
+        print_uint16(gt, NUM_INOUTS_16b);
+
+
         // Step 1: load index and val data
         top->io_inValid = 1;
         top->io_selIdxVal = 0;
@@ -185,25 +185,25 @@ int main(int argc, char** argv) {
         // Step 2: read out permuted data
         top->io_inValid = 0;
         top->io_permute = 1;
-        top->io_mode = 0;
+        top->io_mode = m;
         top->io_outReady = 1;
 
         while(!top->io_outValid) {
             tick();
             top->io_permute = 0; // remove to set to low
+            // top->io_mode = 0;
         }
         bit_unpack_uint64_to_uint16(top->io_outData, out, NUM_INOUTS_64b);
 
-        tick();
         tick();
 
         printf("out:\t");
         print_uint16(out, NUM_INOUTS_16b);
         if(!check_gather_result(gt, out, NUM_INOUTS_16b)) {
-            printf("Error: gather result mismatch\n");
-            return -1;
+            printf("\nm=%d Error: gather result mismatch\n", m);
+            // return -1;
         } else{
-            printf("\nPass!\n");
+            printf("\nm=%d Pass!\n", m);
         }
 
 

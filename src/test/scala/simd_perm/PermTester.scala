@@ -112,7 +112,5 @@ class TestPermutationNetwork extends AnyFlatSpec with ChiselScalatestTester {
       }
     }
   }
-
-
 }
 
