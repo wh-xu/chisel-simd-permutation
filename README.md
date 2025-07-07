@@ -29,7 +29,7 @@ make
 This runs the Chisel generator and outputs Verilog files to the `generated/` directory.
 
 ### Run Tests
-To run the test suite:
+To run the Verilator testbench:
 ```bash
 make test
 ```

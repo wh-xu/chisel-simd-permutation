@@ -4,8 +4,11 @@ doit:
 
 # Run the test
 test:
-	sbt test
+	cd verilator && make
 
-# clean:
-#	git clean -fd
+clean:
+	rm -rf generated/
+	rm -rf test_run_dir/
+	rm -rf target/
+	cd verilator && make clean
 
