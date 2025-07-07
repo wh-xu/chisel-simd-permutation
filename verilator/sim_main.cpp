@@ -1,11 +1,35 @@
-// DESCRIPTION: Verilator: Verilog example module
-//
-// This file ONLY is placed under the Creative Commons Public Domain, for
-// any use, without warranty, 2017 by Wilson Snyder.
-// SPDX-License-Identifier: CC0-1.0
-//======================================================================
-
-// For std::unique_ptr
+/*
+ *                             The MIT License
+ *
+ * Chisel SIMD Permutation Network for Long-vector Architecture
+ * Copyright (c) 2025 by Weihong Xu  <weihong.xu@epfl.ch>
+ *
+ * This file is part of Chisel SIMD Permutation Network for Long-vector Architecture.
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
+ *
+ * PROJECT: Chisel SIMD Permutation Network for Long-vector Architecture
+ * AUTHOR(S): Weihong Xu <weihong.xu@epfl.ch>
+ * DESCRIPTION: main functions for Verilator simulation
+ */
+ 
+ // For std::unique_ptr
 #include <memory>
 
 // Include common routines
@@ -13,6 +37,9 @@
 
 // Include model header, generated from Verilating "top.v"
 #include "Vtop.h"
+
+// Include utility functions for simulation
+#include "utils.h"
 
 static Vtop *top;
 static VerilatedContext* contextp_global;
@@ -28,57 +55,6 @@ void tick() {
     // timestamp += 500/MHz;
 }
 
-void generate_random_uint16(uint16_t *data, uint16_t range, int num) {
-    for (int i = 0; i < num; i++) {
-        data[i] = rand() % range;
-    }
-}
-
-void generate_seq_uint16(uint16_t *data, uint16_t range, int num, bool reverse=false) {
-    for (int i = 0; i < num; i++) {
-        data[i] = reverse ? (range - 1 - i % range) : (i % range);
-    }
-}
-
-void bit_pack_uint16_to_uint64(uint16_t *data, uint64_t *packed, int num_packed) {
-    for (int i = 0; i < num_packed; i++) {
-        packed[i] = 0;
-        for(int j = 0; j < 4; j++) {
-            packed[i] |= (uint64_t)data[i * 4 + j] << (j * 16);
-        }
-    }
-}
-
-void bit_unpack_uint64_to_uint16(uint64_t *packed, uint16_t *data, int num_packed) {
-    for (int i = 0; i < num_packed; i++) {
-        for(int j = 0; j < 4; j++) {
-            data[i * 4 + j] = (packed[i] >> (j * 16)) & 0xffff;
-        }
-    }
-}
-
-void print_uint16(uint16_t *data, int num) {
-    for (int i = 0; i < num; i++) {
-        printf("%d\t", data[i]);
-    }
-    printf("\n");
-}
-
-void print_uint64(uint64_t *data, int num) {
-    for (int i = 0; i < num; i++) {
-        printf("%016lx\t", data[i]);
-    }
-    printf("\n");
-}
-
-bool check_gather_result(uint16_t *gt, uint16_t *out, int num) {
-    for(int i = 0; i < num; i++) {
-        if(gt[i] != out[i]) {
-            return false;
-        }
-    }
-    return true;
-}
 
 int main(int argc, char** argv) {
     // This is a more complicated example, please also see the simpler examples/make_hello_c.
@@ -124,6 +100,7 @@ int main(int argc, char** argv) {
     top = new Vtop{contextp.get(), "TOP"};
 
     // Generate random data
+    const int CODEBOOK_SIZE = 16;
     const int NUM_INOUTS_16b = 256;
     const int NUM_INOUTS_64b = NUM_INOUTS_16b/4;
     uint16_t idx[NUM_INOUTS_16b], val[NUM_INOUTS_16b], gt[NUM_INOUTS_16b], out[NUM_INOUTS_16b];
@@ -142,10 +119,10 @@ int main(int argc, char** argv) {
 
     // Simulate until $finish
     for(int m = 0; m <= 1; m++) {
-        generate_random_uint16(idx, 16*(m+1), NUM_INOUTS_16b);
+        generate_random_uint16(idx, CODEBOOK_SIZE*(m+1), NUM_INOUTS_16b);
         generate_random_uint16(val, NUM_INOUTS_16b, NUM_INOUTS_16b);
 
-        // generate_seq_uint16(idx, 16*(m+1), NUM_INOUTS_16b, true);
+        // generate_seq_uint16(idx, CODEBOOK_SIZE*(m+1), NUM_INOUTS_16b, true);
         // generate_seq_uint16(val, NUM_INOUTS_16b, NUM_INOUTS_16b, false);
 
         bit_pack_uint16_to_uint64(idx, packed_idx_u64, NUM_INOUTS_64b);
@@ -158,7 +135,7 @@ int main(int argc, char** argv) {
 
         // Preprocess the index data to avoid out-of-bound access
         for(int i = 0; i < NUM_INOUTS_16b; i++) {
-            gt[i] = val[idx[i] + (16*(m+1)*(i/(16*(m+1))))];
+            gt[i] = val[idx[i] + (CODEBOOK_SIZE*(m+1)*(i/(CODEBOOK_SIZE*(m+1))))];
         }
 
         printf("gt:\t");

@@ -114,12 +114,12 @@ class SimdPermutation(
     val seg_size: Int = SizeXbar / num_segs
     val mask: Vec[UInt] = VecInit.fill(SizeXbar)(0.U(DataWidth.W))
 
-    val mode_idx = num_segs.asUInt >> mode.asUInt // 2 for E16 + xBar32, 4 for E16 + xBar64, 2 for E32 + xBar64
+    // Generate bit offset mask
     for(s <- 0 to num_segs-1) {
       for(i <- 0 to seg_size-1) {
-        if(s==0) {
+        when(s.asUInt < mode.asUInt+1.U) { 
           mask(s*seg_size + i) := 0.U(DataWidth.W)
-        } else {
+        } otherwise {
           mask(s*seg_size + i) := (1.U(DataWidth.W) << (3.U(3.W)+s.asUInt+mode.asUInt))
         }
       }
