@@ -5,6 +5,7 @@ import chisel3.util._
 
 import chisel3.stage.ChiselStage
 import chisel3.stage.ChiselGeneratorAnnotation
+import javax.xml.crypto.Data
 
 
 class Crossbar2D(
@@ -71,13 +72,17 @@ class VectorReg(
 }
 
 
+// Supported LUT mode definition
 object ModePerm extends ChiselEnum {
-    // val E16   = Value(0x0.U) // 16-ptr    -> 000
-    // val E32   = Value(0x1.U) // 32-ptr    -> 001
-    // val E64   = Value(0x2.U) // 64-ptr    -> 010
-    // val E128  = Value(0x3.U) // 128-ptr   -> 011
-    // val E256  = Value(0x4.U) // 256-ptr   -> 100
-    val E16, E32, E64, E128, E256 = Value
+    val SEQ   = Value(0x0.U(3.W)) // sequential
+    val E4    = Value(0x1.U(3.W)) // 4-ptr     
+    val E8    = Value(0x2.U(3.W)) // 8-ptr     
+    val E16   = Value(0x3.U(3.W)) // 16-ptr    
+    val E32   = Value(0x4.U(3.W)) // 32-ptr    
+    val E64   = Value(0x5.U(3.W)) // 64-ptr    
+    val E128  = Value(0x6.U(3.W)) // 128-ptr   
+    val E256  = Value(0x7.U(3.W)) // 256-ptr   
+    // val SEQ, E16, E32, E64, E128, E256 = Value
 }
 
 
@@ -100,6 +105,8 @@ class SimdPermutation(
 
     val permute = Input(Bool())
     val mode = Input(ModePerm())
+    val mask_idx_bit = Input(UInt(DataWidth.W))
+    val rshift_idx_bit = Input(UInt(log2Ceil(DataWidth).W))
 
     val outValid = Output(Bool())
     val outReady = Input(Bool())
@@ -107,23 +114,25 @@ class SimdPermutation(
     val outData = Output(Vec(NumLanes, Vec(NumBanks, UInt(XLEN.W))))
   })
 
-  // Offset logic for xbar input index when SizeXbar > E
+  // Offset vec generation for xbar input index when SizeXbar > E
   def get_offset_vec(SizeXbar: Int, mode: ModePerm.Type, DataWidth: Int = 16): Vec[UInt] = {
     // Currently only support 16-bit data width and 32/64-ptr xbar
-    val num_segs: Int = SizeXbar / 16 // 2 or 4
-    val seg_size: Int = SizeXbar / num_segs
-    val mask: Vec[UInt] = VecInit.fill(SizeXbar)(0.U(DataWidth.W))
+    val IdxWidth: Int = log2Ceil(SizeXbar)
+    val chunk_size: Int = 2 << ModePerm.E4.litValue.toInt
+    val num_chunks: Int = SizeXbar / chunk_size
+    // Offset vec size: [SizeXbar, IdxWidth]
+    val mask: Vec[UInt] = VecInit.fill(SizeXbar)(0.U(IdxWidth.W))
 
     // Generate bit offset mask
-    for(s <- 0 to num_segs-1) {
-      for(i <- 0 to seg_size-1) {
-        when(s.asUInt < mode.asUInt+1.U) { 
-          mask(s*seg_size + i) := 0.U(DataWidth.W)
-        } otherwise {
-          mask(s*seg_size + i) := (1.U(DataWidth.W) << (3.U(3.W)+s.asUInt+mode.asUInt))
-        }
+    for(c <- 0 to num_chunks-1) {
+      for(i <- 0 to chunk_size-1) {
+        // 0 1 2 3 4 5 6 7 8 -> 0 4 8 12 16 20 24 28 32
+        // 0-1 2-3 4-5 6-7 -> 0 8 16 24
+        // 0-1-2-3 4-5-6-7 -> 0 16 
+        mask(c*chunk_size + i) := (c.U(IdxWidth.W) >> (mode.asUInt - 1.U)) * (2.U<<mode.asUInt)
       }
     }
+
     mask
   }
 
@@ -155,18 +164,21 @@ class SimdPermutation(
   valReg.io.rotateLevel := 0.U
 
   // Offset vector to support case SizeXbar > E
-  // 32-ptr xBar needs 
-  val offsetVec = VecInit.fill(SizeXbar)(0.U(DataWidth.W))
+  val offsetVec = WireDefault(VecInit.fill(SizeXbar)(0.U(DataWidth.W)))
 
   val xbars = Seq.fill(NumSegments)(Module(new Crossbar2D(SizeXbar, DataWidth, UsePipeline)))
+  // val idx_bit_mask = Seq.fill(SizeXbar)(io.bit_mask_idx.U(DataWidth.W))
   for(segment <- 0 to NumSegments-1) {
       xbars(segment).io.inVal := valReg.io.outData(segment).asTypeOf(Vec(SizeXbar, UInt(DataWidth.W)))
-      xbars(segment).io.inIdx := idxReg.io.outData(segment).asTypeOf(Vec(SizeXbar, UInt(DataWidth.W))).zip(offsetVec).map { case (a, b) => a | b }
+      xbars(segment).io.inIdx := idxReg.io.outData(segment).asTypeOf(Vec(SizeXbar, UInt(DataWidth.W))).zip(offsetVec).map { case (a, b) => (((a & io.mask_idx_bit) >> io.rshift_idx_bit) + b) }
   }
 
   // Reshape the xbars output
   val xbarsVecOut = VecInit(xbars.map(_.io.outVal)).asTypeOf(Vec(NumLanes, Vec(NumBanks, UInt(XLEN.W))))
 
+  // TODO: mask the val out to support case SizeXbar < E
+  // val mask = VecInit.fill(NumLanes)(VecInit.fill(NumBanks)(0.U(DataWidth.W)))
+  // val masked_xbarsVecOut = xbarsVecOut.zip(mask).map { case (a, b) => a & b }
   io.outData := Mux(
     io.outValid && io.outReady, 
     xbarsVecOut,
@@ -181,25 +193,33 @@ class SimdPermutation(
 
   val stateReg = RegInit(IDLE_LOAD)
   val rotateCnt = RegInit(0.U(NumRotationRadix.W))
-  val modeReg = Mux(io.permute, io.mode, ModePerm.E16)
+  val modeReg = RegInit(ModePerm.SEQ)
+  val lut_mode = Mux(stateReg === IDLE_LOAD, io.mode, modeReg)
 
   io.inReady := false.B
   io.outValid := false.B
+  idxRegRotateLevel := rotateCnt
+  offsetVec := get_offset_vec(SizeXbar, lut_mode, DataWidth)
 
+  // State machine
   switch(stateReg) {
     is(IDLE_LOAD) {
       io.inReady := true.B
       io.outValid := false.B
       rotateCnt := 0.U
-      // offsetVec := VecInit.fill(SizeXbar)(0.U(DataWidth.W))
+
       when(io.permute) {
-        val lt_xBar_PermSize: Bool = SizeXbar.asUInt < (16.U << io.mode.asUInt)
-        val eq_xBar_PermSize: Bool = SizeXbar.asUInt === (16.U << io.mode.asUInt)
-        val gt_xBar_PermSize: Bool = SizeXbar.asUInt > (16.U << io.mode.asUInt)
+        io.inReady := false.B
+        modeReg := io.mode
+
+        val lt_xBar_PermSize: Bool = SizeXbar.asUInt < (8.U << io.mode.asUInt)
+        val eq_xBar_PermSize: Bool = SizeXbar.asUInt === (8.U << io.mode.asUInt)
+        val gt_xBar_PermSize: Bool = SizeXbar.asUInt > (8.U << io.mode.asUInt)
         switch(Cat(lt_xBar_PermSize, eq_xBar_PermSize, gt_xBar_PermSize)) {
           is(0b100.U) {
             // Rotation for SizeXbar < E
             stateReg := PERMUTE
+            rotateCnt := rotateCnt + 1.U
           }
           is(0b010.U) {
             // Do nothing for SizeXbar == E
@@ -208,7 +228,7 @@ class SimdPermutation(
           is(0b001.U) {
             // Offset for SizeXbar > E
             stateReg := DONE
-            offsetVec := get_offset_vec(SizeXbar, modeReg, DataWidth)
+            
           }
         }
       }
@@ -216,20 +236,24 @@ class SimdPermutation(
     is(PERMUTE) {
       io.inReady := false.B
       rotateCnt := rotateCnt + 1.U
+      // idxRegRotateLevel := rotateCnt
+      modeReg := modeReg
 
-      when(rotateCnt < (1.U << (3.U+modeReg.asUInt-log2Ceil(SizeXbar).U))) {
+      val _rotate_lv = 3.U+modeReg.asUInt-log2Ceil(SizeXbar).U
+      when(rotateCnt < (1.U((NumRotationRadix+1).W) << _rotate_lv)-1.U) {
         stateReg := PERMUTE
         idxRegRotate := true.B
-        idxRegRotateLevel := modeReg.asUInt + 3.U - log2Ceil(SizeXbar).U
       } otherwise {
         stateReg := DONE
         rotateCnt := 0.U
         idxRegRotate := false.B
-        idxRegRotateLevel := 0.U
+        // idxRegRotateLevel := 0.U
       }
     }
     is(DONE) {
       io.outValid := true.B
+      modeReg := ModePerm.SEQ
+
       when(io.outReady) {
         stateReg := IDLE_LOAD
       }

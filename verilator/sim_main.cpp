@@ -100,7 +100,7 @@ int main(int argc, char** argv) {
     top = new Vtop{contextp.get(), "TOP"};
 
     // Generate random data
-    const int CODEBOOK_SIZE = 16;
+    const int MIN_CODEBOOK_SIZE = 4;
     const int NUM_INOUTS_16b = 256;
     const int NUM_INOUTS_64b = NUM_INOUTS_16b/4;
     uint16_t idx[NUM_INOUTS_16b], val[NUM_INOUTS_16b], gt[NUM_INOUTS_16b], out[NUM_INOUTS_16b];
@@ -118,12 +118,13 @@ int main(int argc, char** argv) {
     top->io_permute = 0;
 
     // Simulate until $finish
-    for(int m = 0; m <= 1; m++) {
-        generate_random_uint16(idx, CODEBOOK_SIZE*(m+1), NUM_INOUTS_16b);
-        generate_random_uint16(val, NUM_INOUTS_16b, NUM_INOUTS_16b);
+    for(int cb = 1; cb <= 4; cb++) {
+        // generate_random_uint16(idx, CODEBOOK_SIZE*(1<<m), NUM_INOUTS_16b);
+        // generate_random_uint16(idx, (1<<15)-1, NUM_INOUTS_16b);
+        // generate_random_uint16(val, NUM_INOUTS_16b, NUM_INOUTS_16b);
 
-        // generate_seq_uint16(idx, CODEBOOK_SIZE*(m+1), NUM_INOUTS_16b, true);
-        // generate_seq_uint16(val, NUM_INOUTS_16b, NUM_INOUTS_16b, false);
+        generate_seq_uint16(idx, MIN_CODEBOOK_SIZE*(1<<(cb-1)), NUM_INOUTS_16b, true);
+        generate_seq_uint16(val, NUM_INOUTS_16b, NUM_INOUTS_16b, false);
 
         bit_pack_uint16_to_uint64(idx, packed_idx_u64, NUM_INOUTS_64b);
         printf("val:\t");
@@ -135,7 +136,7 @@ int main(int argc, char** argv) {
 
         // Preprocess the index data to avoid out-of-bound access
         for(int i = 0; i < NUM_INOUTS_16b; i++) {
-            gt[i] = val[idx[i] + (CODEBOOK_SIZE*(m+1)*(i/(CODEBOOK_SIZE*(m+1))))];
+            gt[i] = val[idx[i] + (MIN_CODEBOOK_SIZE*(1<<(cb-1))*(i/(MIN_CODEBOOK_SIZE*(1<<(cb-1)))))];
         }
 
         printf("gt:\t");
@@ -162,7 +163,9 @@ int main(int argc, char** argv) {
         // Step 2: read out permuted data
         top->io_inValid = 0;
         top->io_permute = 1;
-        top->io_mode = m;
+        top->io_mode = cb;
+        top->io_mask_idx_bit = 0xFFFF;
+        top->io_rshift_idx_bit = 0;
         top->io_outReady = 1;
 
         while(!top->io_outValid) {
@@ -177,10 +180,10 @@ int main(int argc, char** argv) {
         printf("out:\t");
         print_uint16(out, NUM_INOUTS_16b);
         if(!check_gather_result(gt, out, NUM_INOUTS_16b)) {
-            printf("\nm=%d Error: gather result mismatch\n", m);
+            printf("\nCB%d Error: gather result mismatch\n\n", 2<<cb);
             // return -1;
         } else{
-            printf("\nm=%d Pass!\n", m);
+            printf("\nCB%d Pass!\n", 2<<cb);
         }
 
 

@@ -11,6 +11,7 @@
 module top
 #(
     parameter int XLEN = 64,
+    parameter int DataWidth = 16,
     parameter int NumLanes = 8,
     parameter int NumBanks = 8,
     parameter int NumSegments = 8,
@@ -31,6 +32,8 @@ module top
 
    input              io_permute,
    input              [2:0] io_mode,
+   input              [DataWidth-1:0] io_mask_idx_bit,
+   input              [$clog2(DataWidth)-1:0] io_rshift_idx_bit,
 
    input              io_outReady,
    output             io_outValid,
@@ -113,6 +116,8 @@ module top
 
     .io_permute(io_permute),
     .io_mode(io_mode), 
+    .io_mask_idx_bit(io_mask_idx_bit),
+    .io_rshift_idx_bit(io_rshift_idx_bit),
     .io_outValid(io_outValid), 
     .io_outReady(io_outReady), 
 
