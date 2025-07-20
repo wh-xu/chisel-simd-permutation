@@ -7,6 +7,13 @@ This project provides a Chisel-based implementation of a SIMD permutation networ
 - **Vector Register File:** Supports segmented storage, rotation, and multi-lane/bank organization.
 - **SIMD Permutation Network:** Integrates crossbars and vector registers for flexible data permutation.
 - **Chisel3-based:** Easily extensible and synthesizable to Verilog/SystemVerilog.
+- The following configurations with **16-bit** precision is supported:
+    | LUT Size                | Crossbar Size | Status   |
+    |-------------------------|---------------|----------|
+    | 4/8/16/32/64/128/256    | 8             |    ✅    |
+    | 4/8/16/32/64/128/256    | 16            |    ✅    |
+    | 4/8/16/32/64/128/256    | 32            |    ✅    |
+    | 4/8/16/32/64/128/256    | 64            |    ✅    |
 
 ## Prerequisites
 - [sbt (Scala Build Tool)](https://www.scala-sbt.org/)
