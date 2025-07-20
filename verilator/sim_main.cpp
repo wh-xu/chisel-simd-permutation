@@ -100,8 +100,9 @@ int main(int argc, char** argv) {
     top = new Vtop{contextp.get(), "TOP"};
 
     // Generate random data
+    const int VLEN = 4096;
+    const int NUM_INOUTS_16b = VLEN/16;
     const int MIN_CODEBOOK_SIZE = 4;
-    const int NUM_INOUTS_16b = 256;
     const int NUM_INOUTS_64b = NUM_INOUTS_16b/4;
     uint16_t idx[NUM_INOUTS_16b], val[NUM_INOUTS_16b], gt[NUM_INOUTS_16b], out[NUM_INOUTS_16b];
     uint64_t packed_idx_u64[NUM_INOUTS_64b], packed_val_u64[NUM_INOUTS_64b];
@@ -118,7 +119,7 @@ int main(int argc, char** argv) {
     top->io_permute = 0;
 
     // Simulate until $finish
-    for(int cb = 1; cb <= 4; cb++) {
+    for(int cb = 1; cb <= 7; cb++) {
         // generate_random_uint16(idx, CODEBOOK_SIZE*(1<<m), NUM_INOUTS_16b);
         // generate_random_uint16(idx, (1<<15)-1, NUM_INOUTS_16b);
         // generate_random_uint16(val, NUM_INOUTS_16b, NUM_INOUTS_16b);
